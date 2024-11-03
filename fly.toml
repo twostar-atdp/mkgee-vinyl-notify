@@ -1,0 +1,22 @@
+# fly.toml app configuration file generated for mkgee-vinyl-notify on 2024-11-03T21:05:12Z
+#
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+#
+
+app = 'mkgee-vinyl-notify'
+primary_region = 'atl'
+
+[build]
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = 'stop'
+  auto_start_machines = true
+  min_machines_running = 0
+  processes = ['app']
+
+[[vm]]
+  memory = '1gb'
+  cpu_kind = 'shared'
+  cpus = 1
