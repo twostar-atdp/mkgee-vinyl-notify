@@ -22,10 +22,9 @@ class DiscogsMonitor:
         
         self._validate_config()
         
-        # Correct headers format for Discogs API
         self.headers = {
-            'User-Agent': 'DiscogsVinylMonitor/1.0',  # More specific user agent
-            'Authorization': f'Discogs token={self.discogs_api_key}'  # Correct auth format
+            'User-Agent': 'DiscogsVinylMonitor/1.0',
+            'Authorization': f'Discogs token={self.discogs_api_key}'
         }
         self.base_url = 'https://api.discogs.com'
         self.pushover_url = 'https://api.pushover.net/1/messages.json'
@@ -76,43 +75,47 @@ class DiscogsMonitor:
     def check_listings(self, release_id='13811316'):
         """Check current marketplace listings for a specific release"""
         try:
-            # First, get the release information
-            release_url = f'{self.base_url}/releases/{release_id}'
-            logger.info(f"Fetching release info from: {release_url}")
-            
-            release_response = requests.get(release_url, headers=self.headers)
-            release_response.raise_for_status()
-            
-            # Then, get the marketplace listings
-            marketplace_url = f'{self.base_url}/marketplace/listings'
+            # Search the marketplace inventory
+            inventory_url = f'{self.base_url}/marketplace/inventory'
             params = {
                 'release_id': release_id,
                 'status': 'For Sale',
-                'format': 'Vinyl'
+                'format': 'Vinyl',
+                'per_page': 100  # Maximum results per page
             }
             
-            logger.info(f"Fetching marketplace listings from: {marketplace_url}")
-            listings_response = requests.get(marketplace_url, headers=self.headers, params=params)
-            listings_response.raise_for_status()
+            logger.info(f"Fetching marketplace inventory from: {inventory_url}")
+            logger.info(f"Search parameters: {params}")
             
-            data = listings_response.json()
+            response = requests.get(
+                inventory_url, 
+                headers=self.headers, 
+                params=params
+            )
+            response.raise_for_status()
             
-            # Log the full response for debugging
+            data = response.json()
+            logger.info(f"API Response Status: {response.status_code}")
             logger.debug(f"API Response: {json.dumps(data, indent=2)}")
             
             if 'listings' in data:
                 self.process_listings(data['listings'])
-            elif 'results' in data:  # Alternative response format
+            elif 'results' in data:
                 self.process_listings(data['results'])
             else:
                 logger.info(f"No listings found for release {release_id}")
-                logger.debug(f"Response data: {data}")
+                logger.debug(f"Response structure: {list(data.keys())}")
                 
         except requests.exceptions.RequestException as e:
             logger.error(f"Error checking listings: {e}")
             if hasattr(e, 'response') and e.response is not None:
                 logger.error(f"Response status: {e.response.status_code}")
                 logger.error(f"Response body: {e.response.text}")
+                
+                # Add rate limit information if available
+                if e.response.headers.get('X-Discogs-Ratelimit-Remaining'):
+                    logger.info(f"Rate limit remaining: {e.response.headers['X-Discogs-Ratelimit-Remaining']}")
+                    logger.info(f"Rate limit total: {e.response.headers.get('X-Discogs-Ratelimit-Limit')}")
             
     def process_listings(self, listings):
         logger.info(f"Found {len(listings)} listings")
@@ -123,21 +126,17 @@ class DiscogsMonitor:
             if listing_id not in self.seen_listings:
                 self.seen_listings.add(listing_id)
                 
-                # Handle different price formats
-                if isinstance(listing['price'], dict):
-                    price = listing['price']
-                else:
-                    # If price is a string, try to parse it
-                    price_value = listing.get('price', '0')
-                    currency = listing.get('currency', 'USD')
-                    price = {'value': price_value, 'currency': currency}
+                # Extract listing details
+                price = listing.get('price', {})
+                if isinstance(price, str):
+                    price = {'value': price, 'currency': 'USD'}
                 
                 condition = listing.get('condition', 'Not specified')
                 location = listing.get('ships_from', listing.get('location', 'Unknown'))
                 
                 title = "💿 New Mk.gee - Fool Vinyl Listed!"
                 message = (
-                    f"Price: {price['value']} {price['currency']}\n"
+                    f"Price: {price['value']} {price.get('currency', 'USD')}\n"
                     f"Condition: {condition}\n"
                     f"Ships from: {location}"
                 )
